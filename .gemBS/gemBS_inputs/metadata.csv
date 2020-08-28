@@ -1,0 +1,7 @@
+Barcode,Library,file_id,end_1,end_2,file_name
+AAACATA,PX0740,PX0740_AAACATA,/out_dir///fastq/HFJMGCCXY_7_1_AAACATA_150bp.concat_val_1.fq.gz,/out_dir///fastq/HFJMGCCXY_7_2_AAACATA_150bp.concat_val_2.fq.gz,PX0740_AAACATA
+AAAGCAA,PX0740,PX0740_AAAGCAA,/out_dir///fastq/HFJMGCCXY_7_1_AAAGCAA_150bp.concat_val_1.fq.gz,/out_dir///fastq/HFJMGCCXY_7_2_AAAGCAA_150bp.concat_val_2.fq.gz,PX0740_AAAGCAA
+AAATGCA,PX0740,PX0740_AAATGCA,/out_dir///fastq/HFJMGCCXY_7_1_AAATGCA_150bp.concat_val_1.fq.gz,/out_dir///fastq/HFJMGCCXY_7_2_AAATGCA_150bp.concat_val_2.fq.gz,PX0740_AAATGCA
+AACCCCA,PX0740,PX0740_AACCCCA,/out_dir///fastq/HFJMGCCXY_7_1_AACCCCA_150bp.concat_val_1.fq.gz,/out_dir///fastq/HFJMGCCXY_7_2_AACCCCA_150bp.concat_val_2.fq.gz,PX0740_AACCCCA
+AACTTGA,PX0740,PX0740_AACTTGA,/out_dir///fastq/HFJMGCCXY_7_1_AACTTGA_150bp.concat_val_1.fq.gz,/out_dir///fastq/HFJMGCCXY_7_2_AACTTGA_150bp.concat_val_2.fq.gz,PX0740_AACTTGA
+AAGACTA,PX0740,PX0740_AAGACTA,/out_dir///fastq/HFJMGCCXY_7_1_AAGACTA_150bp.concat_val_1.fq.gz,/out_dir///fastq/HFJMGCCXY_7_2_AAGACTA_150bp.concat_val_2.fq.gz,PX0740_AAGACTA

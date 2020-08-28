@@ -24,8 +24,6 @@ import gzip
 def checkReferenceFiles(ref,ref_dir,partial=False):
     """
     Function for setting up required reference genome resources
-    Example : checkReferenceFiles(Reference,Reference Directory,Partial)
-    Returns CpG.bed,FREEC_contig_sizes.tsv, and invidual chromosome .fa
     """
     if not(os.path.isfile(ref_dir+"/"+ref+".fa")):
         print("Reference file "+ref_dir+"/"+ref+".fa does not exist.")
@@ -79,22 +77,22 @@ def checkReferenceFiles(ref,ref_dir,partial=False):
         seq_length_file.close()
     print("Reference files exist!")
 #######################################
-def runPipeline(index_file,out_dir,ref,ref_dir,project_name,jobs=4,threads=16,force=False):
+def runPipeline(index_file,out_dir,ref,ref_dir,project_name,jobs=4,threads=16):
     """
     Pipeline wrapper function
-    Example : runPipeline(readSingleCellIndex() Output,"/output directory/","reference_name","/ref/","JOB name",4,4)
-    Outputs /log/job_status.tsv
     """
     #check if ref exists if not set up
     ###
     subprocess.run(["mkdir","-p","/out_dir/tmp"])
     os.environ['TMPDIR']="/out_dir/tmp"
+    #cmd=["TMPDIR"+"="+out_dir+"/tmp"]
+    #runCommand([[out_dir,cmd,"make_temp",'run']])
     
     checkReferenceFiles(ref,ref_dir,True)
     csv_file=readSingleCellIndex(index_file,out_dir+"/",project_name,jobs,threads,ref)
     trimmed_files=setUpMetadata(index_file,out_dir+"/",project_name,jobs,threads,ref)
     file_tracker=pd.DataFrame(index=trimmed_files['file_id'].values.tolist())
-    
+    #file_checker=pd.DataFrame()
     
     for x in file_tracker.index.values[::-1]:
         #print(x)
@@ -107,105 +105,42 @@ def runPipeline(index_file,out_dir,ref,ref_dir,project_name,jobs=4,threads=16,fo
         file_tracker.loc[x,'coverage_track']="/out_dir/extract/"+x.split("_")[-1]+"/"+x.split("_")[-1]+".bw"
         file_tracker.loc[x,'meth_track']="/out_dir/extract/"+x.split("_")[-1]+"/"+x.split("_")[-1]+"_cpg.bb"
         file_tracker.loc[x,'cnv']="/out_dir/cnv/"+x.split("_")[-1]+"/"+x.split("_")[-1]+".dedup.bam_ratio.txt"
-        
-        
-    ###Set up configuration files       
-    if not (os.path.isfile(out_dir+"/log/job_status.csv")):
-        print("Job manager not found. Making :"+out_dir+"/log/job_status.csv")
-        file_status=file_tracker.copy()
-        for x in file_status.columns.values.tolist():
-            file_status[x]=["PENDING"]*len(file_status.index.values.tolist())
-        gemBS_ConfigurationSetup(file_status.index.values.tolist(),out_dir+"/",project_name,jobs,threads,ref)
-        freec_ConfigurationSetup(ref,[x.split("_")[-1] for x in file_status.index.values.tolist()],out_dir,project_name,jobs,threads)
-    else:
-        print("Job manager found - Resuming")
-        file_status=pd.read_csv(out_dir+"/log/job_status.csv",sep=',',index_col=0)
-        
-        
 
-    files=[
-        [x.split("_")[-1],
-         file_tracker.loc[x,'original_fastqs_read1'],
-         file_tracker.loc[x,'original_fastqs_read2']
-        ] for x in file_status.query("trimmed_fastqs_read1=='PENDING' and trimmed_fastqs_read2=='PENDING'").index.values.tolist()
-          ]
-        
-    if len(files)>0:
-        runTrimGalore(files,out_dir+"/",project_name,jobs,threads,ref)
-        
+    gemBS_ConfigurationSetup(index_file,out_dir+"/",project_name,jobs,threads,ref)
+    
+    runTrimGalore(index_file,out_dir+"/",project_name,jobs,threads,ref)
+
+    for x in file_tracker.index.values.tolist():
         for files_to_check in ['trimmed_fastqs_read1','trimmed_fastqs_read2']:
-            for x in file_status.query(files_to_check+"=='PENDING'").index.values.tolist():
-                for file in file_tracker.loc[x,files_to_check].split(","):
-                        if not (os.path.isfile(file)):
-                            print("WARNING:"+file+" check failed. Halting operations.")
-                            file_status.loc[x,files_to_check]='ERROR'
-                            file_status.to_csv(out_dir+"/log/job_status.csv",sep=',')
-                            #sys.exit(1)
-                        else:
-                            file_status.loc[x,files_to_check]="DONE"
-        file_status.to_csv(out_dir+"/log/job_status.csv",sep=',')
-                  
-    if len(file_status.query("aligned_bams=='PENDING'"))>0:
-        runGEMbs([x.split("_")[-1] for x in file_status.query("aligned_bams=='PENDING'").index.values.tolist()],
-                 out_dir,
-                 project_name,
-                 jobs,threads,
-                 ref)
-        for files_to_check in ['aligned_bams','coverage_track',"meth_track"]:
-            for x in file_status.query(files_to_check+"=='PENDING'").index.values.tolist():
-                for file in file_tracker.loc[x,files_to_check].split(","):
-                        if not (os.path.isfile(file)):
-                            print("WARNING:"+file+" check failed. Halting operations.")
-                            file_status.loc[x,files_to_check]='ERROR'
-                            file_status.to_csv(out_dir+"/log/job_status.csv",sep=',')
-                            #sys.exit(1)
-                        else:
-                            file_status.loc[x,files_to_check]="DONE"
-        file_status.to_csv(out_dir+"/log/job_status.csv",sep=',')
-                  
-    if len(file_status.query("fractional_meth=='PENDING'"))>0:
-        for files_to_check in ['fractional_meth']:
-                calcFractionalMethylation(
-                    [x.split("_")[-1] for x in file_status.query(files_to_check+"=='PENDING'").index.values.tolist()],
-                    out_dir,
-                    project_name,
-                    ref,
-                    jobs,
-                    threads
-                )
-        for x in file_status.query(files_to_check+"=='PENDING'").index.values.tolist():
             for file in file_tracker.loc[x,files_to_check].split(","):
                 if not (os.path.isfile(file)):
                     print("WARNING:"+file+" check failed. Halting operations.")
-                    file_status.loc[x,files_to_check]='ERROR'
-                    file_status.to_csv(out_dir+"/log/job_status.csv",sep=',')
                     sys.exit(1)
-                else:
-                    file_status.loc[x,files_to_check]="DONE"
-        file_status.to_csv(out_dir+"/log/job_status.csv",sep=',')
-            
-    if len(file_status.query("cnv=='PENDING'"))>0:
-        for files_to_check in ['cnv']:
-            runControlFREEC([x.split("_")[-1] for x in file_status.query(files_to_check+"=='PENDING'").index.values.tolist()],
-                            out_dir,
-                            project_name,
-                            ref,
-                            jobs,
-                            threads)
-            for x in file_status.query(files_to_check+"=='PENDING'").index.values.tolist():
-                for file in file_tracker.loc[x,files_to_check].split(","):
-                    if not (os.path.isfile(file)):
-                        print("WARNING:"+file+" check failed. Halting operations.")
-                        file_status.loc[x,files_to_check]='ERROR'
-                        file_status.to_csv(out_dir+"/log/job_status.csv",sep=',')
-                        sys.exit(1)
-                    else:
-                        file_status.loc[x,files_to_check]="DONE"
-        file_status.to_csv(out_dir+"/log/job_status.csv",sep=',')
 
+    runGEMbs(index_file,out_dir,project_name,jobs,threads,ref)
+    for x in file_tracker.index.values.tolist():
+        for files_to_check in ['aligned_bams','coverage_track',"meth_track"]:
+             file=file_tracker.loc[x,files_to_check]
+             if not (os.path.isfile(file)):
+                 print("WARNING:"+file+" check failed. Halting operations.")
+                 sys.exit(1)
+
+    calcFractionalMethylation(ref,index_file,out_dir,project_name,jobs,threads)
+    for x in file_tracker.index.values.tolist():
+        for files_to_check in ['fractional_meth']:
+             file=file_tracker.loc[x,files_to_check]
+             if not (os.path.isfile(file)):
+                 print("WARNING:"+file+" check failed. Halting operations.")
+                 sys.exit(1)
                     
-
-
+    freec_ConfigurationSetup(ref,index_file,out_dir,project_name,jobs,threads)
+    runControlFREEC(ref,index_file,out_dir,project_name,jobs,threads)
+    for x in file_tracker.index.values.tolist():
+        for files_to_check in ['cnv']:
+             file=file_tracker.loc[x,files_to_check]
+             if not (os.path.isfile(file)):
+                 print("WARNING:"+file+" check failed. Halting operations.")
+                 sys.exit(1)
                     
     
     cmd=["rm","-r",out_dir+"/tmp"]
@@ -213,10 +148,9 @@ def runPipeline(index_file,out_dir,ref,ref_dir,project_name,jobs=4,threads=16,fo
     print("".join(["#"]*18)+"\nFinished") 
 
 #######################################
-def calcFractionalMethylation(indices,out_dir,project_name,ref,jobs=4,threads=16):
+def calcFractionalMethylation(ref,index_file,out_dir,project_name,jobs=4,threads=16):
     """
-    Function wrapper for converting out_dir/extract/**/*_cpg.bed.gz into strand collapsed out_dir/extract/**/*.fractional_methylation.bed.gz
-    
+    Function for converting out_dir/extract/**/*_cpg.bed.gz into strand collapsed out_dir/extract/**/*.fractional_methylation.bed.gz 
     """
     print("".join(["#"]*18))
     print("Generating fractional methylation calls")
@@ -232,9 +166,9 @@ def calcFractionalMethylation(indices,out_dir,project_name,ref,jobs=4,threads=16
         compression='gzip')['chr'].unique().tolist(),
     ordered=True)
     
-    for x in indices:
-        print("fractional Methylation "+out_dir+"/extract/"+x+"/"+x+"_cpg.bed.gz")
-        fractionalMethylation(reference_cpgs,out_dir,out_dir+"/extract/"+x+"/"+x+"_cpg.bed.gz",cat_type)
+    for x in glob.iglob(out_dir+"/extract/**/*_cpg.bed.gz", recursive=True):
+        print("fractional Methylation "+x)
+        fractionalMethylation(reference_cpgs,out_dir,x,cat_type)
     
     print("Run time:"+str(time.time()-t0))
 #######################################
@@ -292,6 +226,8 @@ def fractionalMethylation(reference_cpgs,out_dir,cpg_file,cat_type):
     .assign(frac_meth = lambda row : round(row['methylated'].astype(int)/row['coverage'],2))\
     .to_csv(cpg_file.replace("_cpg.bed.gz",".fractional_methylation.bed.gz"),compression='gzip',sep='\t',index=False,header=False)
     pybedtools.cleanup()
+    #.query("methylated!='.' or unmethylated!='.'")\
+    #.query("coverage>=3")\
             
 ######################################
 def distributeJobs(jobs,total_cmd_list):
@@ -335,7 +271,7 @@ def runCommand(sample_cmd_list):
             
             
 #######################################
-def runGEMbs(indices,out_dir,project_name,jobs,threads,ref):
+def runGEMbs(index_file,out_dir,project_name,jobs,threads,ref):
     """
     Wrapper function for gemBS. Runs All gemBs with dup marking and flagstat
     """
@@ -356,7 +292,7 @@ def runGEMbs(indices,out_dir,project_name,jobs,threads,ref):
     runCommand([[out_dir,cmd,"gemBS_merge",'log']])
     
     total_cmd_list=[]
-    for x in indices:
+    for x in glob.iglob(out_dir+"/mapping/**/*.bam", recursive=True):
         sample_cmd_list=[]
         cmd=[
         "java",
@@ -364,36 +300,40 @@ def runGEMbs(indices,out_dir,project_name,jobs,threads,ref):
         "-jar",
         '/usr/local/anaconda/share/picard-2.22.3-0/picard.jar',
         'MarkDuplicates',
-        "I="+"/out_dir/mapping/"+x+"/"+x+".bam",
-        "O="+"/out_dir/mapping/"+x+"/"+x+".dups.marked.sorted.bam",
-        "M="+"/out_dir/mapping/"+x+"/"+x+"_metrics.txt",
+        "I="+x,
+        "O="+x.replace(".bam",".dups.marked.sorted.bam"),
+        "M="+x.replace(".bam","_metrics.txt"),
         "VALIDATION_STRINGENCY=SILENT",
         "ASSUME_SORTED=true",
-        "TMP_DIR="+out_dir+"/mapping/tmp"
+        "TMP_DIR="+out_dir+"/mapping"
         ]
-        
-        sample_cmd_list.append([out_dir,cmd,"markDup_"+x,'log'])
+        #runCommand(out_dir,cmd,"gemBS_index",'log')
+        sample_cmd_list.append([out_dir,cmd,"markDup_"+x.split("/")[-1],'log'])
         
         cmd=["mv",
-             "/out_dir/mapping/"+x+"/"+x+".dups.marked.sorted.bam",
-             "/out_dir/mapping/"+x+"/"+x+".bam"]
-        sample_cmd_list.append([out_dir,cmd,"mv_"+x,'log'])
+             x.replace(".bam",".dups.marked.sorted.bam"),
+             x]
+        sample_cmd_list.append([out_dir,cmd,"mv_"+x.split("/")[-1],'log'])
+        #runCommand(out_dir,cmd,"markDup_"+x.split("/")[-1],'log')
 
-        cmd=["md5sum","/out_dir/mapping/"+x+"/"+x+".bam",">","/out_dir/mapping/"+x+"/"+x+".bam.md5sum"]
+        cmd=["md5sum",x,">",x.replace(".bam",".bam.md5")]
         sample_cmd_list.append([out_dir,cmd,"recalc_md5sum",'shell'])
+        #runCommand(out_dir,cmd,"recalc_md5sum",'shell')
 
         cmd=["samtools",
              "flagstat",
              "-@"+str(threads),
-             "/out_dir/mapping/"+x+"/"+x+".bam",
+             x.replace(".dups.marked.sorted.bam",".bam"),
              ">",
-             "/out_dir/mapping/"+x+"/"+x+".flagstat"]
+             x.replace(".dups.marked.sorted.bam",".bam").replace(".bam",".flagstat")]
         sample_cmd_list.append([out_dir,cmd,"flagstat",'shell'])
+        #runCommand(out_dir,cmd,"flagstat",'shell')
 
-        cmd=["samtools","index","-c","-@"+str(threads),"/out_dir/mapping/"+x+"/"+x+".bam"]
+        cmd=["samtools","index","-c","-@"+str(threads),x]
         sample_cmd_list.append([out_dir,cmd,"csi",'run'])
         
         total_cmd_list.append(sample_cmd_list)
+        #runCommand(out_dir,cmd,"csi",'run')
     
     distributeJobs(jobs,total_cmd_list)
         
@@ -406,16 +346,17 @@ def runGEMbs(indices,out_dir,project_name,jobs,threads,ref):
     
 
 #######################################
-def runTrimGalore(indices,out_dir,project_name,jobs,threads,ref):
+def runTrimGalore(index_file,out_dir,project_name,jobs,threads,ref):
     """
     Function for running trimgalore on reads
     """
     print("".join(["#"]*18))
     t0=time.time()
+    tmp=pd.read_csv(index_file,sep='\t',names=['index','read1','read2'])
     total_cmd_list=[]
     cmd=['mkdir','-p',out_dir+"/fastq/"]
     runCommand([[out_dir,cmd,"making_fastq_dir","run"]])
-    for x in indices:
+    for x in tmp.values.tolist():
         cmd=["trim_galore","--clip_R1","6","--clip_R2","6","--paired",x[1],x[2],"-o",out_dir+"/fastq/","-j",str(threads),"--gzip","--fastqc"]
         total_cmd_list.append([[out_dir,cmd,"trim_"+x[0],"log"]])
     
@@ -445,7 +386,6 @@ def readSingleCellIndex(index_file_path,out_dir,project_name,jobs,threads,ref):
     Verify index file format and read paths
     """
     print("".join(["#"]*18))
-
     csv_file=None
     read_error=False
     if os.path.exists(index_file_path):
@@ -462,7 +402,7 @@ def readSingleCellIndex(index_file_path,out_dir,project_name,jobs,threads,ref):
         print("{} does not exist".format(index_file_path))
         sys.exit(1)  
     
-    for x in csv_file['read1'].values.tolist()+csv_file['read2'].values.tolist():
+    for x in csv_file.read1.values.tolist()+csv_file.read2.values.tolist():
         if not os.path.exists(x):
             print("{} does not exist".format(x))
             read_error=True
@@ -544,7 +484,7 @@ def gemBS_ConfigurationSetup(index_file,out_dir,project_name,jobs,threads,ref):
     )
     f.close()
 ############################################
-def freec_ConfigurationSetup(ref,indices,out_dir,project_name,jobs=4,threads=16):
+def freec_ConfigurationSetup(ref,index_file,out_dir,project_name,jobs=4,threads=16):
     """
     Function for setting up config options necessary for ControlFREEC
     """
@@ -553,11 +493,12 @@ def freec_ConfigurationSetup(ref,indices,out_dir,project_name,jobs=4,threads=16)
     cmd=['mkdir','-p',out_dir+"/cnv"]
     runCommand([[out_dir,cmd,"making_cnv_dir","run"]])
             
-    for x in indices:
-        cmd=['mkdir','-p',out_dir+"/cnv/"+x]
+    for x in glob.iglob(out_dir+"/mapping/**/*.bam", recursive=True):
+        name=x.split("/")[-1].replace(".bam","")
+        cmd=['mkdir','-p',out_dir+"/cnv/"+name]
         runCommand([[out_dir,cmd,"mkdir_cnv","run"]])
         
-        f=open(out_dir+"/cnv/"+x+"/config.txt","w+")
+        f=open(out_dir+"/cnv/"+name+"/config.txt","w+")
         f.write(
         "[general]"+"\n"+\
         "chrFiles=/ref"+"\n"+\
@@ -567,48 +508,48 @@ def freec_ConfigurationSetup(ref,indices,out_dir,project_name,jobs=4,threads=16)
         "samtools=//usr/local/anaconda/bin/samtools"+"\n"+\
         "window=5000000"+"\n"+\
         "telocentromeric=5000000"+"\n"+\
-        "outputDir="+out_dir+"/cnv/"+x+"\n"+\
+        "outputDir="+out_dir+"/cnv/"+name+"\n"+\
         "sex=XY"+"\n"+\
         "minExpectedGC=0.39"+"\n"+\
         "maxExpectedGC=0.51"+"\n"+\
         "\n"+\
         "[sample]"+"\n"+\
-        "mateFile="+out_dir+"/cnv/"+x+"/"+x+".dedup.bam"+"\n"+\
+        "mateFile="+out_dir+"/cnv/"+name+"/"+name+".dedup.bam"+"\n"+\
         "inputFormat=BAM\n"
         )
         f.close()
     
 ############################################
-def runControlFREEC(indices,out_dir,project_name,ref,jobs=4,threads=16):
+def runControlFREEC(ref,index_file,out_dir,project_name,jobs=4,threads=16):
     """
     Wrapper for CNV calling via ControlFreec
     """
     print("".join(["#"]*18))
     t0=time.time()   
     total_cmd_list=[]
-    for x in indices:
+    for x in glob.iglob(out_dir+"/mapping/**/*.bam", recursive=True):
         sample_cmd_list=[]
-        bam=out_dir+"/mapping/"+x+"/"+x+".bam"
+        name=x.split("/")[-1].replace(".bam","")
         cmd=["samtools",
              "view",
-             bam,
+             x,
              "-@"+str(threads),
              "-h",
              "-b",
              "-F516",
              "-o",
-             bam.replace(".bam",".dedup.bam").replace("mapping","cnv")
+             x.replace(".bam",".dedup.bam").replace("mapping","cnv")
         ]
 
-        sample_cmd_list.append([out_dir,cmd,"dedup_"+x,"run"])
-        cmd=["freec","-conf",out_dir+"/cnv/"+x+"/config.txt"]
+        sample_cmd_list.append([out_dir,cmd,"dedup_"+name,"run"])
+        cmd=["freec","-conf",out_dir+"/cnv/"+name+"/config.txt"]
 
-        sample_cmd_list.append([out_dir,cmd,"freec_"+x,"log"])
+        sample_cmd_list.append([out_dir,cmd,"freec_"+name,"log"])
 
         cmd=["rm",
-             bam.replace(".bam",".dedup.bam").replace("mapping","cnv")
+             x.replace(".bam",".dedup.bam").replace("mapping","cnv")
         ]
-        sample_cmd_list.append([out_dir,cmd,"rm_"+x+"_dedup","run"])
+        sample_cmd_list.append([out_dir,cmd,"rm_"+name+"_dedup","run"])
         total_cmd_list.append(sample_cmd_list)
     
     distributeJobs(jobs,total_cmd_list)

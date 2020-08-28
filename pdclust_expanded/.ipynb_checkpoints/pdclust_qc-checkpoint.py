@@ -15,7 +15,6 @@ import subprocess
 import plotly
 import plotly.graph_objs as go
 import json
-import re
 from scipy.stats import pearsonr
 from scipy.cluster import hierarchy
 from scipy.spatial import distance
@@ -30,34 +29,90 @@ from rpy2.robjects import r,pandas2ri
 from rpy2.robjects.packages import importr
 
 from functools import reduce
+#subprocess.run(["mkdir","-p",out_dir+"/tmp"])
+#subprocess.run(["mkdir","-p",out_dir+"/log"])
+#pandas2ri.activate()
+#plotly.io.orca.ensure_server()
+#time.sleep(10)
+#from pybedtools import BedTool
+
+# out_dir=sys.argv[1]
+# index_file=sys.argv[2]
+# project_name=sys.argv[3]
+# difference_type='man_dist_scaled'
+# core_count=12
+# print("output directory:"+out_dir)
+# print("output index file:"+index_file)
+
+# targets=[x for x in glob.iglob(out_dir+"/mapping/**/*.bam", recursive=True)]
+# target_df=findFiles(targets)
+# fig=plotBoxplot(["total_reads","mapped","mapped_minus_dup"],stats,['annotation'])
+# plot_figure(fig,out_dir,"figA")
+# fig=plotBoxplot(["cpg_count"],stats,['annotation'])
+# plot_figure(fig,out_dir,"figB")
+# fig=plotBoxplot(["cpg_count_cov3"],stats,['annotation'])
+# plot_figure(fig,out_dir,"figC")
+# fig=plotBoxplot(["average_meth","average_meth_cov3"],stats,['annotation'])
+# plot_figure(fig,out_dir,"figD")
+# fig=plotBoxplot(["mapped%","dup_rate%","mapped_minus_dup%"],stats,['annotation'])
+# plot_figure(fig,out_dir,"figE")
+# fig=plotBoxplot(["T7_conversion"],stats,['annotation'])
+# plot_figure(fig,out_dir,"figF")
+# fig=plotBoxplot(["lambda_conversion"],stats,['annotation'])
+# plot_figure(fig,out_dir,"figG")
+# fig=plotBoxplot(["general_conversion"],stats,['annotation'])
+# plot_figure(fig,out_dir,"figH")
+# fig=plotBoxplot(["CNV"],stats,['annotation'])
+# plot_figure(fig,out_dir,"figI")
+
+
+# annotations_category_colored=ready_annotations(stats,['annotation','average_meth'])
+# fig,cnv_clusters=plot_dendrogram_CNV(CNV,stats,annotations,annotations_category_colored,3)
+# plot_figure(fig,out_dir,"figJ")
+
+
+# chr_list=["chr"+str(x) for x in list(range(1,23))]+["chrX","chrY"]
+# pairwise_combinations=list(itertools.combinations_with_replacement(target_df.cpg.values.tolist(),2))
+# pairwise = pool_pairwise_combination(pairwise_combinations)
+# pairwise_array = pairwise.drop_duplicates(keep='first')[['sample_1','sample_2',difference_type]]\
+# .pivot(index='sample_1',columns='sample_2',values=difference_type)
+
+# fig,pdclust_clusters=plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_colored,3)
+# plot_figure(fig,out_dir,"figL")
+
+# fig=plot_scatter_MDS(pairwise_array,stats,'pdclust_clusters',annotations_category_colored)
+# plot_figure(fig,out_dir,"figM")
+# fig=plot_scatter_MDS(pairwise_array,stats,'average_meth',annotations_category_colored)
+# plot_figure(fig,out_dir,"figN")
+
+# fig=plot_scatter_pca(pairwise_array,stats,'pdclust_clusters',annotations_category_colored)
+# plot_figure(fig,out_dir,"figO")
+# fig=plot_scatter_pca(pairwise_array,stats,'average_meth',annotations_category_colored)
+# plot_figure(fig,out_dir,"figP")
+
+# smoothed_python_df=merge_cpgs([CpGa,CpGb])
+# dm_CpGs,filtered_dmrs,fig_diff,fig_dist,fig_dmr=find_DMRs(smoothed_python_df,min_cpg_cov,min_cpg_in_window,fdr_cutoff,cpg_window)
+# plot_figure(fig_diff,out_dir,"figQ")
+# plot_figure(fig_dist,out_dir,"figR")
+# plot_figure(fig_dmr,out_dir,"figS")
+
 
 ########################################
 def plot_figure(fig,out_dir,file_name):
     """
     Function for plotting figures in fixed dimensions and scale
-    Example : plot_figure(methylation_figure,'/outdirectory/',methylation_boxplot.png)
-    Returns Png saved to /results/
     """
-    print("Running : Plotting "+file_name)
-    t0 = time.time()
-    os.environ['TMPDIR']="/out_dir/tmp"
     plot_dim_x=800
     plot_dim_y=800
     #plotly.offline.iplot(fig,validate=False, filename='customizing-subplot-axes')
-    
-    fig.write_image(out_dir+"/results/"+file_name+".png",width=plot_dim_x,height=plot_dim_y,scale=10)
-    pickle.dump(fig, open(out_dir+"/results/"+file_name+".pkl", "wb" ) )
-    print(time.time()-t0)
+    fig.write_image(out_dir+"/results/"+file_name+".png",width=plot_dim_x,height=plot_dim_y,scale=4)
 
 #########################################
 def findFiles(list_of_files,out_dir,project_name):
     """
     Function retrieves required outputs for downstream analysis.
-    Example : findFiles(["SAMPLE_1","SAMPLE_2","SAMPLE_3"],"/outdirectory","super_special_project")
     Returns dataframe of files per sample
     """
-    print("Running : Scanning for files")
-    t0 = time.time()
     subprocess.run(["mkdir","-p","/out_dir/tmp"])
     os.environ['TMPDIR']="/out_dir/tmp"
     #subprocess.run(["TMPDIR"+"="+out_dir+"/tmp"])
@@ -78,22 +133,18 @@ def findFiles(list_of_files,out_dir,project_name):
         for y in tmp[x].values.tolist():
             if not(os.path.isfile(y)):
                 print("{} does not exist".format(y))
-    print(time.time()-t0)
+    
     return(tmp)
 ###########################################
 def pullStatistics(files,chr_list):
     """
     Function computes statistics on given file set and chromosome set
-    Example : pullStatistics(".findFiles() output",['chr1','chr2'])
     Returns dataframe of stats per sample
     """
-    print("Running : Pulling QC statistics")
-    t0 = time.time()
     tmp=pd.DataFrame()
     tmp['sample']=files['sample']
     tmp=tmp.set_index("sample")
     
-    ###Retrieve basic alignment statistics
     tmp['total_reads']=None
     for sample,flagstat in files.loc[:,["sample","flagstat"]].values.tolist():
         
@@ -121,7 +172,6 @@ def pullStatistics(files,chr_list):
         .stdout.decode('utf-8'))
         tmp.loc[sample,"duplicates"]=result
         
-    ###Retrieve CpG statistics
     tmp['cpg_count']=None
     tmp['cpg_count_cov3']=None
     tmp['average_meth']=None
@@ -137,23 +187,17 @@ def pullStatistics(files,chr_list):
         tmp.loc[sample,"average_meth_cov3"]=cpg_quick.query("cov>=3").meth_frac.mean()
         del cpg_quick
         
-    ###Calculate Percentages
     tmp['mapped%']=tmp['mapped']/tmp['total_reads']*100
     tmp['dup_rate%']=tmp['duplicates']/tmp['mapped']*100
     tmp['mapped_minus_dup']=tmp['mapped']-tmp['duplicates']
     tmp['mapped_minus_dup%']=tmp['mapped_minus_dup']/tmp['total_reads']*100
     
     def getConversionRate(file):
-        """
-        Code courtesy of Simon Heath
-        """
         with open(file) as outfile:
             data=json.load(outfile)
             output=[]
             for query in ['General',"OverConversionControl","UnderConversionControl"]:
                 if query+'C2T' not in data["BaseCounts"]:
-                  output.append(np.NaN);continue
-                if query+'G2A' not in data["BaseCounts"]:
                   output.append(np.NaN);continue  
                 #A
                 a_bp_pair_one = data["BaseCounts"][query+'C2T']['A'][0] + data["BaseCounts"][query+'G2A']['A'][0]
@@ -182,15 +226,12 @@ def pullStatistics(files,chr_list):
             del data
             return(output)
 
-    ###Retrieve conversion rates
     tmp['T7_conversion']=None
     tmp['lambda_conversion']=None
     tmp['general_conversion']=None
     for sample,json_file in files.loc[:,["sample","json"]].values.tolist():
         tmp.loc[sample,"general_conversion"],tmp.loc[sample,"T7_conversion"],tmp.loc[sample,"lambda_conversion"]=getConversionRate(json_file)
         
-        
-    ###Retrieve CNV calls
     tmp['CNV']=None
     
     cnv_list=[]
@@ -217,18 +258,14 @@ def pullStatistics(files,chr_list):
     for sample in files.loc[:,['sample']].values.tolist():
         tmp.loc[sample,'CNV']=CNV_count[sample]
         
-    print(time.time()-t0)
     return(tmp,CNV_array)
 
 ##########################################################################
-def plotBoxplot(what_to_plot,stats,annotation,job_name,shared_axes=True):
+def plotBoxplot(what_to_plot,stats,annotation,job_name):
     """
     Generic boxplot function.
-    Example : plotBoxplot("methylation",dataframe_containing_methylation,"Project Name")
     Returns figure instance
     """
-    print("Running : Generating Boxplot")
-    t0 = time.time()
     colors=[
         '#1f77b4',#  // muted blue
         '#ff7f0e',#  // safety orange
@@ -242,11 +279,7 @@ def plotBoxplot(what_to_plot,stats,annotation,job_name,shared_axes=True):
         '#17becf'#   // blue-teal
     ]
 
-    fig =plotly.subplots.make_subplots(
-        rows=1,
-        cols=len(stats.annotation.unique().tolist()),
-        shared_yaxes=shared_axes,
-        subplot_titles=stats.annotation.unique().tolist())
+    fig =tools.make_subplots(rows=1,cols=len(stats.annotation.unique().tolist()),shared_yaxes=True,subplot_titles=stats.annotation.unique().tolist())
     count=0
     for z in annotation:
         for y in stats[z].unique().tolist():
@@ -260,7 +293,7 @@ def plotBoxplot(what_to_plot,stats,annotation,job_name,shared_axes=True):
                                      name=x,
                                      jitter = 0.5,
                                      boxpoints='all',
-                                     pointpos = -2,
+                                     pointpos = 0,
                                      marker=dict(symbol='circle-open',opacity=1,size=15,color=color),
                                      line=dict(width=1),
                                      whiskerwidth=1,
@@ -285,28 +318,18 @@ def plotBoxplot(what_to_plot,stats,annotation,job_name,shared_axes=True):
         paper_bgcolor='rgb(255,255,255)',
         plot_bgcolor='rgb(255,255,255)'
     )
-    print(time.time()-t0)
+
     return(fig)
 #####################################################
 def plot_dendrogram_CNV(CNV,stats,annotations,annotations_category_colored,cut_tree):
     """
     Function clusters single cells by CNV in euclidean space
-    Example : plot_dendrogram_CNV(.pullStatistics() CNV Output,.pullStatistics() statistics Output,['Methylation',"Example Annotation"],.ready_annotations() output, Number Of Tree clusters)
     Returns figure instance and single cell CNV groupings
-    ### Developers note bit of a weird bug ongoing right where if CNV rows less than 10, legend position breaks
     """
-    print("Running : Generating CNV dendrogram")
-    t0 = time.time()
-    ###Define spacing#####################################
+    ###Define spacing
     ###End goal is nested array where inner array is row, outer is col
     per_row_specs=[]
-    row_specs=None
-    total_specs=[]
-    anno_row_size=None
-    filler=None
-    annotation_size=None
-    
-    CNV_windows=CNV.groupby("Chromosome").count().sort_values("Start",ascending=False).Start.values.tolist()
+    CNV_windows=CNV.groupby("Chromosome").count().Start.values.tolist()
     ### establish rows first
     row_specs=len(CNV.iloc[:,2:].columns.values.tolist())+2+len(annotations) ###length of CNV + annotations (default extends by one for CNV)
     for x in CNV_windows:
@@ -315,53 +338,79 @@ def plot_dendrogram_CNV(CNV,stats,annotations,annotations_category_colored,cut_t
         for y in range(1,x):
             per_row_specs.append(None)
 
+    ###grab arbritary chr for dendogram size
+    CNV_windows.sort()
+
     ### Add in spacing for annotations
-    annotation_size=int(CNV_windows[1]/3)
+    annotation_size=int(CNV_windows[1]/2)
     for x in range(0,len(annotations)+1):
+        #print(x)
         for x in range(0,annotation_size):
             per_row_specs.insert(0,None)
         per_row_specs.insert(0,{"rowspan":row_specs-(2+len(annotations)),"colspan":annotation_size})
 
     ### Add in spacing for dendrogram
-    for x in range(0,annotation_size*3):
+    for x in range(0,CNV_windows[-4]):
          per_row_specs.insert(0,None)
 
-    per_row_specs.insert(0,{"rowspan":row_specs-(2+len(annotations)),"colspan":annotation_size*3})
+    per_row_specs.insert(0,{"rowspan":row_specs-(2+len(annotations)),"colspan":CNV_windows[-4]})
 
     ###fill in gaps in body cols
+    total_specs=[]
     total_specs.append(per_row_specs)
     for x in range(1,row_specs-(2+len(annotations))):
          total_specs.append([None]*len(per_row_specs))
     
     
     ### Add spaces for annotations legends
-    anno_row_size=int(len(total_specs)/10)
-    filler=int(len(per_row_specs)/4-1)
-    
-    for y in range(0,anno_row_size):
-        total_specs.append([None]*len(per_row_specs))
+    for x in range(0,len(annotations)+2):
+        total_specs.append([{"rowspan":1,"colspan":len(per_row_specs)}]+[None]*(len(per_row_specs)-1))
 
-    for x in range(0,len(annotations)+1):
-        total_specs.append(
-            [None]*filler+[{"rowspan":anno_row_size,"colspan":len(per_row_specs)-filler*2}]+[None]*(len(per_row_specs)-filler-1)
-        )
-        for y in range(0,anno_row_size*2):
-            total_specs.append([None]*len(per_row_specs))
+    ###initialize plotting frame
+    fig = tools.make_subplots(rows=len(total_specs),
+                              cols=len(total_specs[0]),
+                              subplot_titles=[""]+annotations+["CNV_cluster"]+CNV.Chromosome.unique().tolist(),
+                              #vertical_spacing=0.1,
+                              #shared_yaxes=True,
+                              specs=total_specs,
+                              print_grid=False
+                             )
+    #print(annotation_size)
+    #print(len(total_specs))
+    #for x in total_specs:
+    #    print(len(x))
         
-    total_specs.append(
-        [None]*filler+[{"rowspan":anno_row_size,"colspan":len(per_row_specs)-filler*2}]+[None]*(len(per_row_specs)-filler-1)
-    )
-    for y in range(0,anno_row_size):
-            total_specs.append([None]*len(per_row_specs))
-
-    ###Define dendogram#####################################    
+    #for x in total_specs[0]:
+    #    if x!=None:
+    #        print(x)
+    ###clustered dendrogram /dendrogram start
+    
     Z = scipy.cluster.hierarchy.linkage(1-CNV.iloc[:,2:].corr(), 'ward')
     dn = scipy.cluster.hierarchy.dendrogram(Z, labels = CNV.iloc[:,2:].corr().columns,no_plot=True)
     icoord = dn['icoord']
     dcoord = dn['dcoord']
     ordered_labels = dn['ivl']
+
+    cutree = hierarchy.cut_tree(Z, n_clusters=cut_tree)
+    cnv_clusters=pd.DataFrame(index=CNV.iloc[:,2:].columns.tolist())
+    cnv_clusters['cnv_clusters']=[chr(x[0]+65) for x in cutree]
     
-    #########Get dendrogram end points and labels
+    annotations_category_colored['cnv_clusters']={}
+    annotations_category_colored['cnv_clusters']['type']='string'
+    colorlist=annotations_category_colored['annotation_colors'].pop(0)
+    unique=cnv_clusters.loc[:,'cnv_clusters'].unique().tolist()
+    if len(unique)<=2:
+        num_list=[0,1]
+    else:
+        num_list=list(np.arange(0,1,1/(len(unique)-1)))
+        num_list.append(1)
+    for yanno,ycolor,ynum in zip(unique,colorlist[:len(unique)],num_list):
+            #print(yanno)
+            annotations_category_colored['cnv_clusters'][yanno]={}
+            annotations_category_colored['cnv_clusters'][yanno]['num']=ynum
+            annotations_category_colored['cnv_clusters'][yanno]['color']=ycolor
+
+    ###Retrieve leaves
     yvals_flat=[item for sublist in dcoord for item in sublist]
     xvals_flat =[item for sublist in icoord for item in sublist]
     zero_vals = []
@@ -379,77 +428,28 @@ def plot_dendrogram_CNV(CNV,stats,annotations,annotations_category_colored,cut_t
             zero_vals = [v for v in correct_leaves_pos]
 
     zero_vals.sort()
-    #########Define dendrogram groups
-    cutree = hierarchy.cut_tree(Z, n_clusters=cut_tree)
-    cnv_clusters=pd.DataFrame(index=CNV.iloc[:,2:].columns.tolist())
-    cnv_clusters['cnv_clusters']=[chr(x[0]+65) for x in cutree]
-    
-    #########Alter annotation dictionary for CNV scale and CNV groups
-    annotations_category_colored['cnv_clusters']={}
-    annotations_category_colored['cnv_clusters']['type']='string'
-    colorlist=annotations_category_colored['annotation_colors'].pop(0)
-    unique=cnv_clusters.loc[:,'cnv_clusters'].unique().tolist()
-    if len(unique)<=2:
-        num_list=[0,1]
-    else:
-        num_list=list(np.arange(0,1,1/(len(unique)-1)))
-        num_list.append(1)
-    for yanno,ycolor,ynum in zip(unique,colorlist[:len(unique)],num_list):
-            annotations_category_colored['cnv_clusters'][yanno]={}
-            annotations_category_colored['cnv_clusters'][yanno]['num']=ynum
-            annotations_category_colored['cnv_clusters'][yanno]['color']=ycolor
-
-            
-    ###initialize plotting frame###########################################
-    fig = plotly.subplots.make_subplots(rows=len(total_specs),
-                              cols=len(total_specs[0]),
-                              subplot_titles=[""]+annotations+["CNV_cluster"]+CNV.Chromosome.unique().tolist(),
-                              specs=total_specs,
-                              print_grid=False
-                             )
-    
-    ###Return plotting frame coordinates and axis names###########################################
-    
-    icount=0
-    indices=[]
-    m=re.findall(r"\(.*?y[0-9]*",fig._grid_str.replace("(empty)",""))
-    for x in m:
-        tmp={}
-        tmp['xaxis_num']=int(x.split(" ")[0].split(",")[0].replace("(",""))
-        tmp['yaxis_num']=int(x.split(" ")[0].split(",")[-1].replace(")",""))
-        tmp['xaxis_name']="xaxis"+x.split(" ")[1].split(",")[0][1:]
-        tmp['yaxis_name']="yaxis"+x.split(" ")[1].split(",")[1][1:]
-        indices.append(tmp)
 
     ###plot nodes to vertical dendrogram
     for label,dcoor,icoor in zip(ordered_labels,dcoord,icoord):
-        fig.append_trace(
-            go.Scatter(
-                x=dcoor,
-                y=icoor,
-                mode='lines',
-                text=ordered_labels,
-                marker=dict(color='black'),
-                showlegend=False
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num'])
+        fig.append_trace(go.Scatter(x=dcoor,y=icoor,mode='lines',text=ordered_labels,marker=dict(color='black'),showlegend=False),1,1)
+
+    ###Set vertical dendrogram leaves / dendrogram complete
+    fig.layout["xaxis1"].update(autorange='reversed',tickangle=45,gridcolor='lightgrey')
+    fig.layout["yaxis1"].update(ticktext=ordered_labels,tickfont=dict(size=8),tickvals=zero_vals,showticklabels=False,ticks="",range=(min(zero_vals)-3,max(zero_vals)+2.5),side='right')
+
+    ### Determine max CNV size range
+    cnv_max=max(CNV.iloc[:,2:].max())
+    cnv_min=0
     
-    fig.layout[indices[icount]['xaxis_name']].update(
-        autorange='reversed',
-        tickangle=45,
-        gridcolor='lightgrey')
-    fig.layout[indices[icount]['yaxis_name']].update(
-        ticktext=ordered_labels,
-        tickfont=dict(size=8),
-        tickvals=zero_vals,
-        showticklabels=False,
-        ticks="",range=(min(zero_vals)-min(zero_vals),max(zero_vals)+min(zero_vals)),
-        side='right')
-    icount+=1;
+    ### Set count checker
+    count=2+CNV_windows[-4]
+
     
-    ###Plot vertical annotations
-    for xanno in annotations+['cnv_clusters']:
+    ### adding heatmap annotations 
+    for xanno in annotations:
         if annotations_category_colored[xanno]["type"]=="numeric":
             tmp=stats.loc[ordered_labels,xanno]
+            #print(1,count)
             fig.append_trace(
             go.Heatmap(
                 z=[[x]for x in tmp.values.tolist()],
@@ -458,37 +458,45 @@ def plot_dendrogram_CNV(CNV,stats,annotations,annotations_category_colored,cut_t
                 zmax=annotations_category_colored[xanno]['cmax'],
                 colorscale=annotations_category_colored[xanno]['color'],
                 showscale=False
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            ),1,count
             )
         else:
-            if xanno!='cnv_clusters':
-                tmp=stats.loc[ordered_labels,xanno]
-            else:
-                tmp=cnv_clusters.loc[ordered_labels,"cnv_clusters"]
-                
+            tmp=stats.loc[ordered_labels,xanno]
             for yanno in [*annotations_category_colored[xanno].keys()][1:]:
                 tmp=tmp.replace(yanno,annotations_category_colored[xanno][yanno]['num'])
             
-            colorscale=[[annotations_category_colored[xanno][z]['num'],annotations_category_colored[xanno][z]['color']] for z in [*annotations_category_colored[xanno].keys()][1:]]
-            if len(colorscale)==1:
-                colorscale.insert(0,[0,colorscale[0][1]])
+            #print(1,count)
             fig.append_trace(
             go.Heatmap(
                 z=[[x]for x in tmp.values.tolist()],
                 y=tmp.index.values.tolist(),
-                colorscale=colorscale,
+                colorscale=[[annotations_category_colored[xanno][z]['num'],annotations_category_colored[xanno][z]['color']] for z in [*annotations_category_colored[xanno].keys()][1:]],
                 showscale=False
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            ),1,count
             )
-            
-        fig['layout'][indices[icount]['yaxis_name']].update(showticklabels=False,ticks="")
-        fig['layout'][indices[icount]['xaxis_name']].update(showticklabels=False,ticks="")
-        icount+=1; 
+        count+=annotation_size+1
+        #print("HI")
+        
+        
+        
+    tmp=cnv_clusters.loc[ordered_labels,"cnv_clusters"]
+    xanno='cnv_clusters'
+    for yanno in [*annotations_category_colored[xanno].keys()][1:]:
+        tmp=tmp.replace(yanno,annotations_category_colored[xanno][yanno]['num'])        
+    #print(1,count)
+    fig.append_trace(
+        go.Heatmap(
+            z=[[x]for x in tmp.values.tolist()],
+            y=tmp.index.values.tolist(),
+            colorscale=[[annotations_category_colored[xanno][z]['num'],annotations_category_colored[xanno][z]['color']] for z in [*annotations_category_colored[xanno].keys()][1:]],
+            showscale=False
+            ),1,count
+            )
+    count+=annotation_size+1
     
     ####Plot CNV heatmaps
-    cnv_max=max(CNV.iloc[:,2:].max())
-    cnv_min=0
     for x in CNV.Chromosome.unique().tolist():
+        #print(x,count)
         fig.append_trace(
         go.Heatmap(
             z=CNV.query("Chromosome==@x").loc[:,ordered_labels].T.values.tolist(),
@@ -497,22 +505,28 @@ def plot_dendrogram_CNV(CNV,stats,annotations,annotations_category_colored,cut_t
             zmax=cnv_max,
             showscale=False,
             colorscale="RdBu"
-        ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+        ),1,count
         )
-        fig['layout'][indices[icount]['yaxis_name']].update(showticklabels=False,ticks="")
-        fig['layout'][indices[icount]['xaxis_name']].update(showticklabels=False,ticks="")
-        icount+=1;
+        count+=(len(CNV.query("Chromosome==@x").iloc[:,2:])+1)
     
     
     ### hide axis across dendrograms except annotations and dendrogram
-    fig['layout'][indices[icount-1]['yaxis_name']].update(showticklabels=True,ticks="outside",side='right')
+    fig['layout'][[x for x in fig['layout'] if 'yaxis' in x][-(2+len(annotations+['cnv_clusters']))]].update(showticklabels=True,ticks="outside",side='right')
+    for x in [x for x in fig['layout'] if 'xaxis' in x][1:]:
+            fig['layout'][x].update(showticklabels=False,ticks="")
+        
+    for x in [x for x in fig['layout'] if 'yaxis' in x][1:]:
+            fig['layout'][x].update(showticklabels=False,ticks="")
     
     ### adjust chromosome labels
     for z in fig['layout']['annotations']:
         z['textangle']=-90
-        
-    ### Plot legends    
-    for xanno in annotations+['cnv_clusters']:
+    
+    ### retrieve retrive annotation axis
+    yaxis_labels=[x for x in fig['layout'] if 'yaxis' in x][-(len(annotations+['cnv_clusters'])+1):]
+    xaxis_labels=[x for x in fig['layout'] if 'xaxis' in x][-(len(annotations+['cnv_clusters'])+1):]
+    ### add annotation legends
+    for xanno,xrow,yaxis,xaxis in zip(annotations+['cnv_clusters'],range(row_specs-len(annotations+['cnv_clusters']),row_specs),yaxis_labels,xaxis_labels):
         if annotations_category_colored[xanno]["type"]=="numeric":
             tmp=[round(x,3) for x in list(
                     np.arange(
@@ -526,38 +540,22 @@ def plot_dendrogram_CNV(CNV,stats,annotations,annotations_category_colored,cut_t
             go.Scattergl(
                 x=tmp,
                 y=[xanno]*len(tmp),
-                marker=dict(symbol='square',
-                            size=20,
-                            color=tmp,
-                            cmin=annotations_category_colored[xanno]['cmin'],
-                            cmax=annotations_category_colored[xanno]['cmax'],
-                            colorscale=annotations_category_colored[xanno]['color']
+                marker=dict(symbol='square',size=20,color=tmp,cmin=annotations_category_colored[xanno]['cmin'],cmax=annotations_category_colored[xanno]['cmax'],colorscale=annotations_category_colored[xanno]['color']
                        ),
                 showlegend=False,
                 mode='markers+text',
                 text=[tmp[0]]+["" for x in range(0,len(tmp)-2)]+[tmp[-1]],
-                textfont=dict(size=10,color="black"),
+                textfont=dict(size=20,color="black"),
                 textposition=['middle left']*(len(tmp)-1)+['middle right']
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            ),xrow,1
             )
-            fig['layout'][indices[icount]['yaxis_name']].update(
-                showticklabels=True,
-                showgrid=False,
-                zeroline=False,
-                title="",
-                tickfont=dict(size=20)
-            )
-            fig['layout'][indices[icount]['xaxis_name']].update(
-                showticklabels=False,
-                showgrid=False,
-                zeroline=False,                                                         
-                range=[
-                    annotations_category_colored[xanno]['cmin']-4.5*(annotations_category_colored[xanno]['cmax']-annotations_category_colored[xanno]['cmin'])/20,
-                    annotations_category_colored[xanno]['cmax']+4.5*(annotations_category_colored[xanno]['cmax']-annotations_category_colored[xanno]['cmin'])/20
-                ]
-            ) 
+            fig['layout'][yaxis].update(showticklabels=True,showgrid=False,zeroline=False,title="",titlefont=dict(size=15))
+            fig['layout'][xaxis].update(showticklabels=False,showgrid=False,zeroline=False,range=[annotations_category_colored[xanno]['cmin']*0.9,
+                                                                                                              annotations_category_colored[xanno]['cmax']*1.5
+                                                                                                              ]
+                                       ) 
         else:
-            tmp=[annotations_category_colored[xanno][x]['num'] for x in list(annotations_category_colored[xanno].keys())[1:]]
+            tmp=[annotations_category_colored['annotation'][x]['num'] for x in list(annotations_category_colored['annotation'].keys())[1:]]
             fig.append_trace(
             go.Scattergl(
                 x=tmp,
@@ -568,29 +566,20 @@ def plot_dendrogram_CNV(CNV,stats,annotations,annotations_category_colored,cut_t
                 showlegend=False,
                 mode='markers+text',
                 textposition='middle left',
-                textfont=dict(color='black',size=15)
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+                textfont=dict(color='black',size=20)
+            ),xrow,1
             )
-            fig['layout'][indices[icount]['yaxis_name']].update(
-                showticklabels=True,
-                showgrid=False,
-                zeroline=False,
-                tickfont=dict(size=20)
-            )
-            fig['layout'][indices[icount]['xaxis_name']].update(
-                showticklabels=False,
-                showgrid=False,
-                zeroline=False,
-                range=[-0.3,1.1]
-            )
-        icount+=1;
-        
+            fig['layout'][yaxis].update(showticklabels=True,showgrid=False,zeroline=False,title="",titlefont=dict(size=15))
+            fig['layout'][xaxis].update(showticklabels=False,showgrid=False,zeroline=False,range=[-0.5,len(tmp)*1.5])
+
+    
+    ### add CNV legend
     fig.append_trace(
         go.Scattergl(
             x=[50+x for x in range(int(cnv_min),int(cnv_max)+1,1)],
             text=[int(cnv_min)]+["" for x in range(int(cnv_min)+1,int(cnv_max),1)]+[int(cnv_max)],
             textposition=['middle left']*(len([x for x in range(int(cnv_min),int(cnv_max)+1,1)])-1)+['middle right'],
-            y=['CNV' for x in range(int(cnv_min),int(cnv_max)+1,1)],
+            y=[0 for x in range(int(cnv_min),int(cnv_max)+1,1)],
             mode="markers+text",
             marker=dict(symbol='square',size=20,color=[x for x in range(int(cnv_min),int(cnv_max)+1,1)],colorscale="RdBu"
                        ),
@@ -598,41 +587,35 @@ def plot_dendrogram_CNV(CNV,stats,annotations,annotations_category_colored,cut_t
             size=20,
             color="black"
             ),
-            showlegend=False
-        ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            showlegend=False,
+            #zmin=cnv_min,
+            #zmax=cnv_max,
+            #showscale=showscale
+        ),row_specs,1
         )
-    fig['layout'][indices[icount]['xaxis_name']]\
-    .update(showticklabels=False,
-            showgrid=False,
-            zeroline=False,
-            range=[40,125])
-    fig['layout'][indices[icount]['yaxis_name']]\
-    .update(showticklabels=True,
-            showgrid=False,
-            zeroline=False,
-            title="",tickfont=dict(size=20))
+    fig['layout'][[x for x in fig['layout'] if 'xaxis' in x][-1]].update(showticklabels=False,showgrid=False,zeroline=False,range=[40,125])
+    fig['layout'][[x for x in fig['layout'] if 'yaxis' in x][-1]].update(showticklabels=False,showgrid=False,zeroline=False,title="CNV",titlefont=dict(size=15))
     
+    
+    
+
     ### plotting 
     fig['layout'].update(width=1400,
                          height=1400,
-                         margin={'t':150,'b':0},
+                         margin={'t':200},
                          paper_bgcolor='rgb(255,255,255)',
                          plot_bgcolor='rgb(255,255,255)'
                         )
-    print(time.time()-t0)
     return(fig,cnv_clusters)
-        
+    #plotly.offline.iplot(fig, filename='stacked-subplots',image_width=1600,image_height=1600)
 ############################################################
-def pool_pairwise_combination(cpgs,core_count,chr_list,difference_type,directory_path,libid):
+def pool_pairwise_combination(combinations,core_count,chr_list,difference_type,directory_path,libid):
     """
     Wrapper function for determining pairwise distance across single cell methylations samples
-    Example : pool_pairwise_combination(["SampleA","SampleB"],4,["chr1","chr2","man_dist_scaled","/outdirectory/","JOB_NAME"])
     Saves intermediate files in results
     Returns Datafarme of pairwise distances
     """
-    print("Running : Pooling Pairwisie combinations")
     t0 = time.time()
-    combinations=list(itertools.combinations_with_replacement(cpgs,2))
     pool = mp.Pool(core_count,maxtasksperchild=1)
     chr_comb=[list(x)+[chr_list,difference_type] for x in combinations]
     chunks = [chr_comb[x:x+300] for x in range(0, len(chr_comb), 300)]
@@ -664,9 +647,6 @@ def pool_pairwise_combination(cpgs,core_count,chr_list,difference_type,directory
 def pairwise_combination(samples):
     """
     Function for determining pairwise distance given SampleA,SampleB,chromosome list, and distance type
-    Possible distance functions: 'pearson','euclid_dist','man_dist','man_dist_scaled','cityblock'
-    Default : 'cityblock'
-    Example : pariwise_combination(['SampleA','SampleB'])
     Returns SampleA,SampleB,distance
     """
     chr_list=samples[2]
@@ -717,22 +697,22 @@ def pairwise_combination(samples):
 def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_colored,cut_tree,difference_type):
     """
     Wrapper ploting heatmap and associated annotations for pairwise clustering of single cell samples
-    Example : plotPairwise_heatmap(.pool_pairwise_combination()  Output,.pullStatistics() statistics Output,['Methylation',"Example Annotation"],.ready_annotations() output, Number Of Tree clusters,"man_dist_scaled")
     Returns figure instance and Single cell methylation groupings
     """
-    print("Running : Generating Heatmap")
-    t0 = time.time()
     ###Set dimensions given pw_array
     xdim = 12 if pairwise_array.shape[1] < 12 else pairwise_array.shape[1]
     ydim = 12 if pairwise_array.shape[0] < 12 else pairwise_array.shape[0]
+
     ### Convert pairwise distances to euclidean distances
     euclid_pairwise_array=pd.DataFrame()
 
     for row in pairwise_array.index.values.tolist():
         for col in pairwise_array.columns.values.tolist():
+            #print(row,col)
             row_array=pairwise_array.loc[:,row].values.tolist()
             col_array=pairwise_array.loc[:,col].values.tolist()
             dist=distance.euclidean(row_array,col_array)
+            #print(dist)
             euclid_pairwise_array.loc[row,col]=distance.euclidean(pairwise_array.loc[:,row].values.tolist(), pairwise_array.loc[:,col].values.tolist())
 
     ### Assign Spacing
@@ -771,14 +751,11 @@ def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_c
     ### Add to specs
     specs.append(tmp_array);del tmp_array
     ### Filler spacing : rows
-    for x in range(0,xdim+1):
+    for x in range(0,xdim-1):
         specs.append([None]*len(specs[0]))
     ### Add space per annotation legend
     for x in range(0,len(annotations)+2):
-        specs.append([None]*(len(specs[0])-ydim)+[{'rowspan': 2,'colspan': ydim}]+[None]*(ydim-1))
-        specs.append([None]*len(specs[0]));specs.append([None]*len(specs[0]));specs.append([None]*len(specs[0]))
-        
-    specs.pop();specs.pop()
+        specs.append([None]*(len(specs[0])-ydim)+[{'rowspan': 1,'colspan': ydim}]+[None]*(ydim-1))
 
 
     ### Hierarchical clustering of euclidean array
@@ -805,6 +782,7 @@ def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_c
         num_list=list(np.arange(0,1,1/(len(unique)-1)))
         num_list.append(1)
     for yanno,ycolor,ynum in zip(unique,colorlist[:len(unique)],num_list):
+            #print(yanno)
             annotations_category_colored['pdclust_clusters'][yanno]={}
             annotations_category_colored['pdclust_clusters'][yanno]['num']=ynum
             annotations_category_colored['pdclust_clusters'][yanno]['color']=ycolor
@@ -832,51 +810,31 @@ def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_c
     zero_vals.sort()
 
     ###initialize plotting frame
-    fig = plotly.subplots.make_subplots(rows=len(specs),
+    fig = tools.make_subplots(rows=len(specs),
                                   cols=len(specs[0]),
                                   print_grid=False,
                               vertical_spacing=0,
                               horizontal_spacing=0,
-                              specs=specs,
+                              specs=specs
                                  )
-    
-    icount=0
-    indices=[]
-    m=re.findall(r"\(.*?y[0-9]*",fig._grid_str.replace("(empty)",""))
-    for x in m:
-        tmp={}
-        tmp['xaxis_num']=int(x.split(" ")[0].split(",")[0].replace("(",""))
-        tmp['yaxis_num']=int(x.split(" ")[0].split(",")[-1].replace(")",""))
-        tmp['xaxis_name']="xaxis"+x.split(" ")[1].split(",")[0][1:]
-        tmp['yaxis_name']="yaxis"+x.split(" ")[1].split(",")[1][1:]
-        indices.append(tmp)
 
+    ### Initialize counter 
+    y_counter=round(ydim/6)+len(annotations)+2
+    x_counter=1
+    plot_counter=0
     ###plot nodes to horizontal dendrogram
     for label,dcoor,icoor in zip(ordered_labels,dcoord,icoord):
-            fig.append_trace(
-                go.Scatter(
-                    x=icoor,
-                    y=dcoor,
-                    mode='lines',
-                    text=ordered_labels,
-                    marker=dict(color='black'),
-                    showlegend=False,
-                    hoverinfo='none'
-                ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
-            )
+        fig.append_trace(go.Scatter(x=icoor,y=dcoor,mode='lines',text=ordered_labels,marker=dict(color='black'),showlegend=False,hoverinfo='none'),x_counter,y_counter)
 
+    plot_counter+=1
     ###set horizontal dendrogram labels
-    fig.layout[indices[icount]['xaxis_name']].update(
-        ticktext=ordered_labels,
-        tickfont=dict(size=8),
-        tickvals=zero_vals,
-        showticklabels=False,
-        ticks="",range=[min(zero_vals)-min(zero_vals),max(zero_vals)+min(zero_vals)])
-    fig.layout[indices[icount]['yaxis_name']].update(gridcolor='lightgrey')
-    icount+=1
+    fig.layout["xaxis"+str(plot_counter)].update(ticktext=ordered_labels,tickfont=dict(size=8),tickvals=zero_vals,showticklabels=True,ticks="",range=(min(zero_vals)-3,max(zero_vals)+2.5))
+    fig.layout["yaxis"+str(plot_counter)].update(gridcolor='lightgrey')
+    ### Move counter
+    x_counter+=round(ydim/6)
 
     ### Plot horizontal annotations
-    for xanno in annotations+["pdclust_clusters"]:
+    for xanno in annotations:
         if annotations_category_colored[xanno]["type"]=="numeric":
             tmp=stats.loc[ordered_labels,xanno]
             fig.append_trace(
@@ -886,55 +844,59 @@ def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_c
                 zmin=annotations_category_colored[xanno]['cmin'],
                 zmax=annotations_category_colored[xanno]['cmax'],
                 colorscale=annotations_category_colored[xanno]['color'],showscale=False
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            ),x_counter,y_counter
             )
         else:
-            if xanno=='pdclust_clusters':
-                tmp=pdclust_clusters.loc[ordered_labels,"pdclust_clusters"]
-            else:
-                tmp=stats.loc[ordered_labels,xanno]
+            tmp=stats.loc[ordered_labels,xanno]
             for yanno in [*annotations_category_colored[xanno].keys()][1:]:
                 tmp=tmp.replace(yanno,annotations_category_colored[xanno][yanno]['num'])
-                
-            colorscale=[[annotations_category_colored[xanno][z]['num'],annotations_category_colored[xanno][z]['color']] for z in [*annotations_category_colored[xanno].keys()][1:]]
-            if len(colorscale)==1:
-                colorscale.insert(0,[0,colorscale[0][1]])
 
             fig.append_trace(
             go.Heatmap(
                 z=[[x for x in tmp.values.tolist()]],
                 x=tmp.index.values.tolist(),
-                colorscale=colorscale,
+                colorscale=[[annotations_category_colored[xanno][z]['num'],annotations_category_colored[xanno][z]['color']] for z in [*annotations_category_colored[xanno].keys()][1:]],
                 showscale=False
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            ),x_counter,y_counter
             )   
-        fig.layout[indices[icount]['yaxis_name']].update(showticklabels=False,ticks="")
-        fig.layout[indices[icount]['xaxis_name']].update(showticklabels=False,ticks="")
-        icount+=1 
+        x_counter+=round(ydim/12)
+        plot_counter+=1
+        fig.layout["yaxis"+str(plot_counter)].update(showticklabels=False,ticks="")
+        fig.layout["xaxis"+str(plot_counter)].update(showticklabels=False,ticks="")
+   
+    ### Add pdclusters to horizontal annotation
+    tmp=pdclust_clusters.loc[ordered_labels,"pdclust_clusters"]
+    for yanno in [*annotations_category_colored["pdclust_clusters"].keys()][1:]:
+        tmp=tmp.replace(yanno,annotations_category_colored["pdclust_clusters"][yanno]['num'])
+    fig.append_trace(
+        go.Heatmap(
+            z=[[x for x in tmp.values.tolist()]],
+            x=tmp.index.values.tolist(),
+            colorscale=[[annotations_category_colored['pdclust_clusters'][z]['num'],annotations_category_colored['pdclust_clusters'][z]['color']] for z in [*annotations_category_colored['pdclust_clusters'].keys()][1:]],
+            showscale=False
+        ),x_counter,y_counter
+        )   
+    x_counter+=round(ydim/12)
+    plot_counter+=1
+    fig.layout["yaxis"+str(plot_counter)].update(showticklabels=False,ticks="")
+    fig.layout["xaxis"+str(plot_counter)].update(showticklabels=False,ticks="")   
+
+    ###Reset Y_counter and add to x_counter
+    y_counter=1;
+    #print(x_counter,y_counter)
 
     ###plot nodes to vertical dendrogram
     for label,dcoor,icoor in zip(ordered_labels,dcoord,icoord):
-        fig.append_trace(
-            go.Scatter(
-                x=dcoor,
-                y=icoor,
-                mode='lines',
-                #text=ordered_labels,
-                marker=dict(color='black'),
-                showlegend=False
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
-        )
-    ### Set veritcal dendrogram labels
-    fig.layout[indices[icount]['xaxis_name']].update(autorange='reversed',gridcolor='lightgrey')
-    fig.layout[indices[icount]['yaxis_name']].update(
-                                                 ticktext=ordered_labels,
-                                                 tickfont=dict(size=8),
-                                                 tickvals=zero_vals,showticklabels=False,ticks="",
-                                                 range=[max(zero_vals)+min(zero_vals),min(zero_vals)-min(zero_vals)],
-                                                 side='right')
-    icount+=1
+        fig.append_trace(go.Scatter(x=dcoor,y=icoor,mode='lines',text=ordered_labels,marker=dict(color='black'),showlegend=False),x_counter,y_counter)
+    plot_counter+=1;y_counter+=1
+    ### Set horizontal dendrogram labels
+    fig.layout["xaxis"+str(plot_counter)].update(autorange='reversed',gridcolor='lightgrey')
+    fig.layout["yaxis"+str(plot_counter)].update(autorange='reversed',ticktext=ordered_labels,tickfont=dict(size=8),tickvals=zero_vals,showticklabels=True,ticks="",range=(min(zero_vals)-3,max(zero_vals)+2.5),side='right')  
+    ### Move counter
+    y_counter+=round(ydim/6)-1
     ### Plot horizontal annotations
-    for xanno in annotations+["pdclust_clusters"]:
+    for xanno in annotations:
+        #print(x_counter,y_counter,xanno,"hori_anno")
         if annotations_category_colored[xanno]["type"]=="numeric":
             tmp=stats.loc[ordered_labels[::-1],xanno]
             fig.append_trace(
@@ -944,30 +906,45 @@ def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_c
                 zmin=annotations_category_colored[xanno]['cmin'],
                 zmax=annotations_category_colored[xanno]['cmax'],
                 colorscale=annotations_category_colored[xanno]['color'],showscale=False
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            ),x_counter,y_counter
             )
         else:
-            if xanno=='pdclust_clusters':
-                tmp=pdclust_clusters.loc[ordered_labels[::-1],"pdclust_clusters"]
-            else:
-                tmp=stats.loc[ordered_labels[::-1],xanno]
+            tmp=stats.loc[ordered_labels[::-1],xanno]
             for yanno in [*annotations_category_colored[xanno].keys()][1:]:
                 tmp=tmp.replace(yanno,annotations_category_colored[xanno][yanno]['num'])
 
-            colorscale=[[annotations_category_colored[xanno][z]['num'],annotations_category_colored[xanno][z]['color']] for z in [*annotations_category_colored[xanno].keys()][1:]]
-            if len(colorscale)==1:
-                colorscale.insert(0,[0,colorscale[0][1]])
             fig.append_trace(
             go.Heatmap(
                 z=[[x] for x in tmp.values.tolist()],
                 y=tmp.index.values.tolist(),
-                colorscale=colorscale,
+                colorscale=[
+                    [annotations_category_colored[xanno][z]['num'],annotations_category_colored[xanno][z]['color']] for z in [*annotations_category_colored[xanno].keys()][1:]
+                ],
                 showscale=False
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            ),x_counter,y_counter
             )   
-        fig.layout[indices[icount]['yaxis_name']].update(showticklabels=False,ticks="")
-        fig.layout[indices[icount]['xaxis_name']].update(showticklabels=False,ticks="")
-        icount+=1
+        y_counter+=round(ydim/12)
+        plot_counter+=1
+        fig.layout["yaxis"+str(plot_counter)].update(showticklabels=False,ticks="")
+        fig.layout["xaxis"+str(plot_counter)].update(showticklabels=False,ticks="")
+        
+        
+    ### Add pdclusters to vertical annotation
+    tmp=pdclust_clusters.loc[ordered_labels[::-1],"pdclust_clusters"]
+    for yanno in [*annotations_category_colored["pdclust_clusters"].keys()][1:]:
+        tmp=tmp.replace(yanno,annotations_category_colored["pdclust_clusters"][yanno]['num'])
+    fig.append_trace(
+        go.Heatmap(
+            z=[[x] for x in tmp.values.tolist()],
+            y=tmp.index.values.tolist(),
+            colorscale=[[annotations_category_colored['pdclust_clusters'][z]['num'],annotations_category_colored['pdclust_clusters'][z]['color']] for z in [*annotations_category_colored['pdclust_clusters'].keys()][1:]],
+            showscale=False
+        ),x_counter,y_counter
+        )   
+    y_counter+=round(ydim/12)
+    plot_counter+=1
+    fig.layout["yaxis"+str(plot_counter)].update(showticklabels=False,ticks="")
+    fig.layout["xaxis"+str(plot_counter)].update(showticklabels=False,ticks="") 
 
     ###HEATMAP
     fig.append_trace(
@@ -978,15 +955,18 @@ def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_c
                 zmax=pairwise_array.max().max(),
                 showscale=False,
                 colorscale="RdBu"
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
-    )
-    fig.layout[indices[icount]['yaxis_name']].update(side='right')
-    fig.layout[indices[icount]['xaxis_name']].update(side='bottom',showticklabels=False,ticks="")
-    icount+=1
-
+            ),x_counter,y_counter
+            )
+    plot_counter+=1
+    fig.layout["yaxis"+str(plot_counter)].update(side='right')
+    fig.layout["xaxis"+str(plot_counter)].update(side='bottom')
+    #print(x_counter,y_counter,"heat")
+    ### Move counter
+    x_counter+=ydim;plot_counter+=1
 
     ### Plot annotation legends
-    for xanno in annotations+['pdclust_clusters']:
+    for xanno in annotations:
+        #print(x_counter,y_counter,xanno)
         if annotations_category_colored[xanno]["type"]=="numeric":
             tmp=[round(x,3) for x in list(
                     np.arange(
@@ -1007,10 +987,10 @@ def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_c
                 text=[tmp[0]]+["" for x in range(0,len(tmp)-3)]+[tmp[-1]],
                 textfont=dict(size=10,color="black"),
                 textposition=['middle left']+['middle left']*18+["middle right"],
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            ),x_counter,y_counter
             )
-            fig['layout'][indices[icount]['yaxis_name']].update(showticklabels=True,showgrid=False,zeroline=False,tickfont=dict(size=10))
-            fig['layout'][indices[icount]['xaxis_name']].update(showticklabels=False,
+            fig['layout']["yaxis"+str(plot_counter)].update(showticklabels=True,showgrid=False,zeroline=False,tickfont=dict(size=10))
+            fig['layout']["xaxis"+str(plot_counter)].update(showticklabels=False,
                                                             showgrid=False,
                                                             zeroline=False,
                                                             range=[
@@ -1031,12 +1011,33 @@ def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_c
                 mode='markers+text',
                 textposition='middle left',
                 textfont=dict(color='black',size=10)
-            ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+            ),x_counter,y_counter
             )
-            fig['layout'][indices[icount]['yaxis_name']].update(showticklabels=True,showgrid=False,zeroline=False,tickfont=dict(size=10))
-            fig['layout'][indices[icount]['xaxis_name']].update(showticklabels=False,showgrid=False,zeroline=False,range=[-0.3,1.1])
-        icount+=1
+            fig['layout']["yaxis"+str(plot_counter)].update(showticklabels=True,showgrid=False,zeroline=False,tickfont=dict(size=10))
+            fig['layout']["xaxis"+str(plot_counter)].update(showticklabels=False,showgrid=False,zeroline=False,range=[-0.3,1.1])
 
+        x_counter+=1;plot_counter+=1
+        
+    ### Add pdclusters to legend
+    xanno='pdclust_clusters'
+    tmp=[annotations_category_colored[xanno][x]['num'] for x in list(annotations_category_colored[xanno].keys())[1:]]
+    fig.append_trace(
+    go.Scattergl(
+        x=tmp,
+        y=[xanno]*len(list(annotations_category_colored[xanno].keys())[1:]),
+        marker=dict(symbol='square',size=20,color=[annotations_category_colored[xanno][z]['color'] for z in list(annotations_category_colored[xanno].keys())[1:]]
+               ),
+        text=[z for z in list(annotations_category_colored[xanno].keys())[1:]],
+        showlegend=False,
+        mode='markers+text',
+        textposition='middle left',
+        textfont=dict(color='black',size=10)
+    ),x_counter,y_counter
+    )
+    fig['layout']["yaxis"+str(plot_counter)].update(showticklabels=True,showgrid=False,zeroline=False,tickfont=dict(size=10))
+    fig['layout']["xaxis"+str(plot_counter)].update(showticklabels=False,showgrid=False,zeroline=False,range=[-0.3,1.1])
+
+    x_counter+=1;plot_counter+=1
     ### Set pairwise array max/min and plot legend
     dist_min=float(pairwise_array.min().min())
     dist_max=float(pairwise_array.max().max())
@@ -1056,33 +1057,28 @@ def plotPairwise_heatmap(pairwise_array,stats,annotations,annotations_category_c
             color="black"
             ),
             showlegend=False,
-        ),indices[icount]['xaxis_num'],indices[icount]['yaxis_num']
+        ),x_counter,y_counter
         )
-    fig['layout'][indices[icount]['yaxis_name']].update(showticklabels=True,showgrid=False,zeroline=False,tickfont=dict(size=10))
-    fig['layout'][indices[icount]['xaxis_name']].update(showticklabels=False,showgrid=False,zeroline=False,range=[dist_min-2*((dist_max-dist_min)/20),dist_max+((dist_max-dist_min)/20)])
+    fig['layout']["yaxis"+str(plot_counter)].update(showticklabels=True,showgrid=False,zeroline=False,tickfont=dict(size=10))
+    fig['layout']["xaxis"+str(plot_counter)].update(showticklabels=False,showgrid=False,zeroline=False,range=[dist_min-2*((dist_max-dist_min)/20),dist_max+((dist_max-dist_min)/20)])
 
     fig['layout'].update(width=1400,
                          height=1400,
-                         margin={'t':50,'l':50,'r':50},
+                         margin={'t':100,'l':100},
                          paper_bgcolor='rgb(255,255,255)',
                          plot_bgcolor='rgb(255,255,255)'
                         )
-    print(time.time()-t0)
+    #plotly.offline.iplot(fig, filename='stacked-subplots',image_width=1600,image_height=1600)
     return(fig,pdclust_clusters)
-
 ##################################################################
 def plot_scatter_MDS(pairwise_array,stats,annotation,annotations_category_colored):
     """
     Function for plotting MDS on pairwise distances
-    Example : plot_scatter_MDS(.pool_pairwise_combination()  Output,.pullStatistics() statistics Output,['Methylation',"Example Annotation"],.ready_annotations() output)
-    Returns scatterplot figure instance with annotations 
     """
-    print("Running : MDS scatter plot")
-    t0 = time.time()
     embedding = MDS(n_components=2,dissimilarity='precomputed', random_state=1)
     X_transformed = embedding.fit_transform(pairwise_array)
     
-    fig = plotly.subplots.make_subplots(rows=1,cols=1)
+    fig = tools.make_subplots(rows=1,cols=1)
     if isinstance(stats.loc[:,annotation].values.tolist()[0],float):
         fig.append_trace(go
                          .Scattergl(
@@ -1134,21 +1130,16 @@ def plot_scatter_MDS(pairwise_array,stats,annotation,annotations_category_colore
                          paper_bgcolor='rgb(255,255,255)',
                          plot_bgcolor='rgb(255,255,255)'
                         )
-    print(time.time()-t0)
     return(fig)
 ###############################################################
 def plot_scatter_pca(pairwise_array,stats,annotation,annotations_category_colored):
     """
     Function for plotting PCA on pairwise distances
-    Example : plot_scatter_pca(.pool_pairwise_combination()  Output,.pullStatistics() statistics Output,['Methylation',"Example Annotation"],.ready_annotations() output)
-    Returns scatterplot figure instance with annotations 
     """
-    print("Running : PCA scatter plot")
-    t0 = time.time()
     pca = PCA(n_components=2)
     X_transformed=pca.fit_transform(pairwise_array)
     
-    fig = plotly.subplots.make_subplots(rows=1,cols=1)
+    fig = tools.make_subplots(rows=1,cols=1)
     if isinstance(stats.loc[:,annotation].values.tolist()[0],float):
         fig.append_trace(go
                          .Scattergl(
@@ -1200,30 +1191,24 @@ def plot_scatter_pca(pairwise_array,stats,annotation,annotations_category_colore
                          plot_bgcolor='rgb(255,255,255)',
                         )        
         
-    print(time.time()-t0)
     return(fig)
 #################################################################################################
 def merge_cpgs(cpgs,core_count=4):
     """
     Wrapper merging CpG libraries into a smoothed library via Bsseq
-    Requires Nested array of consisting of 1xN number of Groups, each group consisting of unique index, and Number of cores
-    Example: merge_cpg([[A1,A2,A3],[B1,B2,B3],[C1,C2,C3]],4)
     Returns normalized CpG methylation dataframe
     """
-    print("Running : Merging CpGs")
-    t0 = time.time()
     bsseq = importr('bsseq')
     
     cpg_tracker=pd.DataFrame()
     cpg_dataframes=[]
 
-    ###Name Groups
     for group in range(0,len(cpgs)):
         for sample in cpgs[group]:
             cpg_tracker.loc[sample.split("/")[-1].split(".")[0],"file"]=sample
             cpg_tracker.loc[sample.split("/")[-1].split(".")[0],"group"]=chr(group+65)
 
-    ###Read in CpGs per group member
+
     for sample_name,file in zip(cpg_tracker.index.values.tolist(),cpg_tracker['file'].values.tolist()):
         cpg_dataframes.append(
             pd.read_csv(file,
@@ -1234,54 +1219,28 @@ def merge_cpgs(cpgs,core_count=4):
                        ).set_index(['chr','start']).rename(columns={"cov":sample_name+"_cov","meth_frac":sample_name+"_meth"})
         )
 
-    ###Combine CpGs into single Dataframe
     merged_cpgs=reduce(lambda  left,right: pd.merge(left,right,left_index=True, right_index=True,how='outer'),cpg_dataframes)
     merged_cpgs.replace(np.NaN,0,inplace=True)
     del(cpg_dataframes)
 
-    ###Convert each aspect of Python Dataframe into R data.table
-    ro.r.assign(
-        "meth",
-        ro.conversion.py2rpy(
-            merged_cpgs.loc[:,[x+"_meth" for x in cpg_tracker.index.values.tolist()]].reset_index(drop=True)
-        )
-    )
-    ro.r.assign(
-        "cov",
-        ro.conversion.py2rpy(merged_cpgs.loc[:,[x+"_cov" for x in cpg_tracker.index.values.tolist()]].reset_index(drop=True)
-                            )
-    )
-    ro.r.assign(
-        "loc",ro.conversion.py2rpy(merged_cpgs.reset_index().loc[:,["chr","start"]]
-                                  )
-    )
-    ro.r.assign(
-        "names_list",
-        ro.StrVector(cpg_tracker.index.values.tolist())
-    )
-    ro.r.assign(
-        "group_list",
-        ro.StrVector(cpg_tracker['group'].values.tolist())
-    )
-    
-    ###Covert R data.table into BSseq object
+    ro.r.assign("meth",ro.conversion.py2rpy(merged_cpgs.loc[:,[x+"_meth" for x in cpg_tracker.index.values.tolist()]].reset_index(drop=True)))
+    ro.r.assign("cov",ro.conversion.py2rpy(merged_cpgs.loc[:,[x+"_cov" for x in cpg_tracker.index.values.tolist()]].reset_index(drop=True)))
+    ro.r.assign("loc",ro.conversion.py2rpy(merged_cpgs.reset_index().loc[:,["chr","start"]]))
+    ro.r.assign("names_list",ro.StrVector(cpg_tracker.index.values.tolist()))
+    ro.r.assign("group_list",ro.StrVector(cpg_tracker['group'].values.tolist()))
     ro.r('bsseq_obj<-BSseq(M = as.matrix(meth), Cov = as.matrix(cov), chr = loc$chr, pos = loc$start, sampleNames =names_list)')
-    ###Remove intermidates
     ro.r('rm(meth)')
     ro.r('rm(cov)')
     ro.r('rm(loc)')
-    ###Collapse BSseq based on groups
     ro.r('combined<-collapseBSseq(bsseq_obj,group=group_list)')
     ro.r('rm(bsseq_obj)')
-    ###Run smoothing function 
-    ###Becareful with thread allocation. python is extremely odd in this scenario where the same variables/memory usage is applied per thread
+    #### Becareful with thread allocation. python is extremely odd in this scenario where the same variables/memory usage is applied per thread
     ro.r('smoothed_bsseq<-BSmooth(combined, h = 1000, verbose=TRUE, BPPARAM = MulticoreParam(workers = '+str(core_count)+'))')
     ro.r('rm(combined)')
 
-    ###Convert BSseq into Python DataFrame
     smooth_python_df=pd.DataFrame()
 
-    
+
     smooth_python_df['chr']=[x for x in  ro.r('as.character(seqnames(granges(smoothed_bsseq)))')]
     smooth_python_df['start']=[x for x in  ro.r('as.numeric(start(granges(smoothed_bsseq)))')]
     for group,num in zip(cpg_tracker['group'].unique().tolist(),range(0,len(cpg_tracker['group'].unique().tolist()))):
@@ -1289,18 +1248,13 @@ def merge_cpgs(cpgs,core_count=4):
             smooth_python_df['cov_'+group]=[round(x[num],2) for x in ro.r('getCoverage(smoothed_bsseq)')]
     
     ro.r('rm(smoothed_bsseq)')
-    print(time.time()-t0)
     return(smooth_python_df)
 ##########################################################
 def find_DMRs(smoothed_python_df,min_cpg_cov,min_cpg_in_window,fdr_cutoff,cpg_window):
     """
     Wrapper for detecting DMRs between two bisulifite(merged) libraries
-    Requires Smoothed_df from .merge_CpGs(), Minimum CpG coverage over merged, Minimum CpGs within Window, FDR cutoff, Window size
-    Example : find_DMRs(Smoothed_DataFRame,3,3,0.01,200)
     Returns Differentially methylated CpGs, DMRs, and figures for intra DM-CpG distances,Dm-CpG distributin, and DMR sizes
     """
-    print("Running : Scanning for DMRs")
-    t0 = time.time()
     min_cpg_cov=3
     min_cpg_in_window=3
     fdr_cutoff=0.01
@@ -1321,9 +1275,7 @@ def find_DMRs(smoothed_python_df,min_cpg_cov,min_cpg_in_window,fdr_cutoff,cpg_wi
     #####################
     difference['meth_bin']=pd.cut(difference['diff']
         ,np.arange(difference["diff"].min(),difference["diff"].max(),(difference["diff"].max()-difference["diff"].min())/50))
-    
-    ### Plot distribution of methylation difference
-    fig_diff = plotly.subplots.make_subplots(rows=1,cols=1)
+    fig_diff = tools.make_subplots(rows=1,cols=1)
     tmp=difference.groupby("meth_bin").count()
     fig_diff.append_trace(go.Scatter(y=tmp['chr'].values.tolist(),x=tmp.index.values.astype(str).tolist(),showlegend=False
     ),1,1
@@ -1366,11 +1318,9 @@ def find_DMRs(smoothed_python_df,min_cpg_cov,min_cpg_in_window,fdr_cutoff,cpg_wi
     dm_CpGs = difference.query("diff<=@diff_lower or diff>=@diff_upper")
     ### calculate difference from nearest CpG to another.
     dm_CpGs['distance']= dm_CpGs.groupby('chr')['start'].transform(pd.Series.diff).fillna(cpg_window+1)
-    
+    #####################
     dm_CpGs['distance_bin']=pd.cut(dm_CpGs['distance'],list(range(0,1000,10))+[dm_CpGs['distance'].max()+1])
-    
-    ### Plot 
-    fig_dist = plotly.subplots.make_subplots(rows=1,cols=1)
+    fig_dist = tools.make_subplots(rows=1,cols=1)
     tmp=dm_CpGs.groupby("distance_bin").count()
     fig_dist.append_trace(go.Scatter(y=tmp['chr'].values.tolist(),x=tmp.index.values.astype(str).tolist(),showlegend=False
     ),1,1
@@ -1397,9 +1347,9 @@ def find_DMRs(smoothed_python_df,min_cpg_cov,min_cpg_in_window,fdr_cutoff,cpg_wi
                              plot_bgcolor='rgb(255,255,255)'
                         )
 
+    dm_CpGs['distance_bin']=None
     ###########################
     ### Bin CpG. New bin if cpg distance is outside of window or methylation state changes 
-    dm_CpGs['distance_bin']=None
     dm_CpGs = dm_CpGs.assign(bin=np.cumsum((dm_CpGs.loc[:,"distance"]>cpg_window)|(dm_CpGs.loc[:,"diff"]*dm_CpGs.loc[:,"diff"].shift(1).fillna(0.0)<0)))
     ### Calculate DMR start,stop, # of CpGs, mean methylation and total coverage across
     DMRs=dm_CpGs.groupby(["chr","bin"]).agg({'start': ['min', 'max','count'], 'meth_A': 'mean', 'meth_B': 'mean', 'cov_A': 'sum', 'cov_B': 'sum'})
@@ -1414,7 +1364,7 @@ def find_DMRs(smoothed_python_df,min_cpg_cov,min_cpg_in_window,fdr_cutoff,cpg_wi
                            )
                     )
     ###########################
-    fig_dmr = plotly.subplots.make_subplots(rows=1,cols=1)
+    fig_dmr = tools.make_subplots(rows=1,cols=1)
     filtered_dmrs['size']=filtered_dmrs['dmr_end']-filtered_dmrs['dmr_start']
     fig_dmr.append_trace(go.Scatter(y=filtered_dmrs.sort_values('size')['size'].values.tolist(),
                                 x=list(range(0,len(filtered_dmrs))),
@@ -1442,17 +1392,13 @@ def find_DMRs(smoothed_python_df,min_cpg_cov,min_cpg_in_window,fdr_cutoff,cpg_wi
                              #plot_bgcolor='rgb(255,255,255)'
                         )
     del tmp,difference
-    print(time.time()-t0)
+
     return(dm_CpGs,filtered_dmrs,fig_diff,fig_dist,fig_dmr)
 #############################################################
 def ready_annotations(stats,annotations):
     """
     Function generates dictionary for annotations
-    Example : .ready_annotations(.pullStatistics() output,['example_annotationsA','example_annotationsB'])
-    Returns dictionary based on annotation definitions 
     """
-    print("Running : Generating dictionary of annotations")
-    t0 = time.time()
     annotations_category_colored={}
     annotations_category_colored['annotation_colors']=[
         ["#7FC97F","#BEAED4","#FDC086","#FFFF99","#386CB0","#F0027F","#BF5B17","#666666"],###Accent
@@ -1488,14 +1434,13 @@ def ready_annotations(stats,annotations):
             annotations_category_colored[xanno]['type']='string'
             colorlist=annotations_category_colored['annotation_colors'].pop(0)
             unique=stats.loc[:,xanno].unique().tolist()
-            if len(unique)==1:
-                num_list=[1]
-            elif len(unique)==2:
+            if len(unique)>=2:
                 num_list=[0,1]
             else:
-                num_list=list(np.arange(0,1,1/(len(unique)-1)))
+                num_list=np.arange(0,1,1/(len(unique)-1))
                 num_list.append(1)
             for yanno,ycolor,ynum in zip(unique,colorlist[:len(unique)],num_list):
+                    print(yanno)
                     annotations_category_colored[xanno][yanno]={}
                     annotations_category_colored[xanno][yanno]['num']=ynum
                     annotations_category_colored[xanno][yanno]['color']=ycolor
@@ -1505,6 +1450,5 @@ def ready_annotations(stats,annotations):
             annotations_category_colored[xanno]['cmin']=stats.loc[:,xanno].min()
             annotations_category_colored[xanno]['cmax']=stats.loc[:,xanno].max()
             
-    print(time.time()-t0)
     return(annotations_category_colored)
 ##############################################################################

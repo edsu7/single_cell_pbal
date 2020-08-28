@@ -1,3 +1,3 @@
 #!/usr/bin/env python
-import .functions
-import .pdclust_qc
+from .functions import *
+from .pdclust_qc import *
