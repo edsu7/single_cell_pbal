@@ -1,0 +1,56 @@
+BootStrap: docker
+From: ubuntu:xenial
+
+%runscript
+    exec /usr/local/bin/gemBS $@
+
+%help
+    gemBS singularity container
+
+%environment
+    PATH=/usr/local/:$PATH
+    PATH=/usr/local/anaconda/bin:$PATH
+
+
+%post
+         (mkdir /ext && cd /ext && mkdir disk1 disk2 disk3 disk4 disk5 disk6 disk7 disk8 disk9)
+    apt-get update
+         apt-get install -y python3 build-essential git autoconf python3-pip wget lbzip2 locales
+    apt-get install -y zlib1g-dev libbz2-dev gsl-bin libgsl0-dev libgtk-3-0 libgconf-2-4 libnss3 libxss1 libasound2 xvfb xauth libxtst6
+    apt-get install -y libncurses5-dev liblzma-dev libssl-dev libcurl4-openssl-dev
+    pip3 install 'matplotlib<3.0' multiprocess
+
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+    locale-gen en_US.utf8
+    /usr/sbin/update-locale LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+
+    mkdir /usr/local/build
+    cd /usr/local/build
+    git clone --recursive https://github.com/heathsc/gemBS.git
+    (cd gemBS; python3 setup.py install)
+    rm -rf gemBS && cd && rmdir /usr/local/build
+    q
+    cd /usr/local/
+    wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    bash Miniconda3-latest-Linux-x86_64.sh -b -p /usr/local/anaconda
+
+    export PATH="/usr/local/anaconda/bin:$PATH"
+    rm Miniconda3-latest-Linux-x86_64.sh
+
+    conda config --add channels conda-forge
+    conda config --add channels bioconda
+    conda config --add channels plotly
+    conda config --add channels r
+    conda update --all
+
+    conda install -c conda-forge wand
+    conda install multiprocess pandas numpy scipy -y
+    conda install -c plotly plotly plotly-orca psutil requests -y
+    conda install -c anaconda scikit-learn statsmodels -y
+    conda install -c r rpy2
+
+    conda install -c bioconda fastqc control-freec picard trim-galore pybedtools bioconductor-bsseq -y
+    ln -s  /usr/local/anaconda/lib/R/modules/lapack.so  /usr/local/anaconda/lib/R/lib/libRlapack.so
+
